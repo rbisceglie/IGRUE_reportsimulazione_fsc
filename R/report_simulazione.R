@@ -1,7 +1,7 @@
 # configurazioni -------------------------------------------------------------
-fondo = "FESR"
-dsn_igrue_old = "FESR_official" #FESR_official
-dsn_igrue_new = "FESR_simulazione"#"FESR_simulazione"
+fondo = "FSC"
+dsn_igrue_old = "FSC_official" #FESR_official
+dsn_igrue_new = "FSC_official"#"FESR_simulazione"
 x <- c("OLD", "NEW")
 pvl03 <- "G:\\Il Mio Drive\\Monitoraggio\\IGRUE\\FESR\\Invio\\2021_01\\validazione\\VLD-03_XLS_311551.xls" # path e file excel del report di prevalidazione/validazione 03
 

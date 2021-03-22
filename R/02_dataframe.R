@@ -80,7 +80,7 @@ for (i in x) {
 
 # bandi =======================================================================================================
   dataframe$bandi[[i]] <- IGRUE[[i]]$PA00 %>% 
-    select(COD_PROC_ATT,COD_PROC_ATT_LOCALE,DESCR_PROCEDURA_ATT)
+    select(COD_PROC_ATT,COD_PROC_ATT_LOCALE,DESCR_PROCEDURA_ATT, `DATA AVVIO PROCEDURA`, `DATA FINE PROCEDURA`)
 
 
 # mappa_pratica_pratt =========================================================================================
@@ -93,9 +93,13 @@ for (i in x) {
 # mappa_pratica_bando ========================================================================================
   dataframe$mappa_pratica_bando[[i]] <- left_join(dataframe$mappa_pratica_pratt[[i]], dataframe$bandi[[i]], by="COD_PROC_ATT")
  
+  # cig ========================================================================================
+  dataframe$cig[[i]] <- IGRUE[[i]]$PG00 %>%
+    filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
+    select(COD_LOCALE_PROGETTO, CIG)
+  
 # mapppa_pratica_asse ===================================================================================================
 # mappa decodifica COD_LIVELLO_GERARCHICO rispetto ad [ASSE]
-  if (fondo != "FSC") {
   dataframe$mappa_pratica_asse[[i]] <- IGRUE[[i]]$FN01 %>%
     filter(COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
     select(COD_LOCALE_PROGETTO, COD_LIV_GERARCHICO) %>%
@@ -103,15 +107,6 @@ for (i in x) {
     left_join(IGRUE[[i]]$AP00, by="COD_LOCALE_PROGETTO") %>% 
     separate(VALORE_DATI_RILEVATI,c("COD_PROGRAMMA","PROGRAMMA","TIPO_REGIONE","ASSE","OT","PI","OS"), sep = "#") %>%
     select(COD_LOCALE_PROGETTO, ASSE, OT, PI, OS, TITOLO_PROGETTO)
-}  else {
-  dataframe$mappa_pratica_asse[[i]] <- IGRUE[[i]]$FN01 %>%
-    filter(COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
-    select(COD_LOCALE_PROGETTO, COD_LIV_GERARCHICO) %>%
-    left_join(IGRUE$TC$TC36, by = "COD_LIV_GERARCHICO") %>%
-    left_join(IGRUE[[i]]$AP00, by="COD_LOCALE_PROGETTO") %>% 
-    separate(VALORE_DATI_RILEVATI,c("COD_PROGRAMMA","PROGRAMMA","ASSE","OT", "PI"), sep = "#") %>%
-    select(COD_LOCALE_PROGETTO, ASSE, TITOLO_PROGETTO)
-}
 
 # stato_progetto ==============================================================
 # mappa decodifica STATO_PROGETTO --> [Stato Pratica] 2=Ammesso e Finanziato, 8 =Chiuso
@@ -120,99 +115,116 @@ dataframe$stato_progetto[[i]] <- IGRUE[[i]]$PR01 %>%
     select(COD_LOCALE_PROGETTO, STATO_PROGETTO) %>%
     mutate(STATO_PROGETTO_DESCRIZIONE=recode(STATO_PROGETTO, "2" = "Ammesso e Finanziato", "3"= "Chiuso"))
 
-# concesso  ===================================================================================================
-# FN00 su progetti_attivi, per quote ERDF+QA+FPREG non cancellate --> [costo_ammesso]
+# finanziamento  ===================================================================================================
+# FN00 su progetti_attivi, per quote ERDF+QA+FPREG+PRT non cancellate --> [costo_ammesso]
 IGRUE[[i]]$FN00$IMPORTO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN00$IMPORTO))
-if(fondo == "FESR") {
-dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
-  filter(COD_FONDO %in% c("FPREG","QA","ERDF") & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
+dataframe$finanziamento[[i]] <- IGRUE[[i]]$FN00 %>%
+  filter(COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
   group_by(COD_LOCALE_PROGETTO) %>%
-  summarise(CONCESSO = sum(IMPORTO)) %>%
-  mutate(CONCESSO = round2(CONCESSO, 2)) 
-} else if(fondo == "FSC") {
-  dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
-    filter(COD_FONDO %in% c("FSC") & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
-    group_by(COD_LOCALE_PROGETTO) %>%
-    summarise(CONCESSO = sum(IMPORTO)) %>%
-    mutate(CONCESSO = round2(CONCESSO, 2))   
-} else if(fondo == "INTERREG") {
-  dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
-    filter(COD_FONDO %in% c("QA","ERDF", "PRT") & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
-    group_by(COD_LOCALE_PROGETTO) %>%
-    summarise(CONCESSO = sum(IMPORTO)) %>%
-    mutate(CONCESSO = round2(CONCESSO, 2))   
-}
-# impegnato  ===================================================================================================
+  summarise(FINANZIAMENTO = sum(IMPORTO)) %>%
+  mutate(FINANZIAMENTO = round2(FINANZIAMENTO, 2))   
 
+# concesso  ===================================================================================================
+# FN01 su progetti_attivi
+IGRUE[[i]]$FN01$IMPORTO_AMMESSO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN01$IMPORTO_AMMESSO))
+  dataframe$concesso[[i]] <- IGRUE[[i]]$FN01 %>%
+    filter(COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
+    group_by(COD_LOCALE_PROGETTO) %>%
+    summarise(CONCESSO = sum(IMPORTO_AMMESSO)) %>%
+    mutate(CONCESSO = round2(CONCESSO, 2))   
+
+# costo_realizzato  ===================================================================================================
+# FN03 su progetti_attivi, 
+IGRUE[[i]]$FN03$IMP_REALIZZATO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN03$IMP_REALIZZATO))
+dataframe$costo_realizzato[[i]] <- IGRUE[[i]]$FN03 %>%
+  filter(COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & FLG_CANCELLAZIONE != "S") %>%
+  group_by(COD_LOCALE_PROGETTO) %>%
+  summarise(COSTO_REALIZZATO = sum(IMP_REALIZZATO)) %>%
+  mutate(COSTO_REALIZZATO = round2(COSTO_REALIZZATO, 2))   
+
+# impegnato  ===================================================================================================
 # impegnato ##################################################################
+# FN04 impegni su progetti_attivi, I-D
+IGRUE[[i]]$FN04$IMPORTO_IMPEGNO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN04$IMPORTO_IMPEGNO))
+dataframe$impegnato[[i]] <- IGRUE[[i]]$FN04 %>% 
+  filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
+  pivot_wider(names_from = TIPOLOGIA_IMPEGNO, values_from = IMPORTO_IMPEGNO, values_fill = NA, values_fn = sum) %>%
+  #spread(TIPOLOGIA_IMPEGNO, IMPORTO_IMPEGNO) %>%
+  mutate(
+    D = if(exists("D", where = .)) D else NA,
+    I = if(exists("I", where = .)) I else NA
+  ) %>%
+  replace_na(list(I=0,D=0)) %>%
+  mutate(IMPEGNATO=I-D) %>%
+  group_by(COD_LOCALE_PROGETTO, DATA_IMPEGNO) %>%
+  summarise(IMPEGNATO = sum(IMPEGNATO)) %>%
+  mutate(IMPEGNATO = round2(IMPEGNATO, 2))
+
+# impegnato_ammesso ##################################################################
 # FN05 impegni su progetti_attivi, I-D
-  #if (exists(IGRUE[[i]]$FN05)) {
   IGRUE[[i]]$FN05$IMPORTO_IMP_AMM <- as.double(gsub(",","\\.",IGRUE[[i]]$FN05$IMPORTO_IMP_AMM))
-  dataframe$impegnato[[i]] <- IGRUE[[i]]$FN05 %>% 
+  dataframe$impegnato_ammesso[[i]] <- IGRUE[[i]]$FN05 %>% 
     filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-    spread(TIPOLOGIA_IMPEGNO, IMPORTO_IMP_AMM) %>%
+    pivot_wider(id_cols = COD_LOCALE_PROGETTO, names_from = TIPOLOGIA_IMPEGNO, values_from = IMPORTO_IMP_AMM, values_fill = NA, values_fn = sum) %>%
     mutate(
       D = if(exists("D", where = .)) D else NA,
-      I = if(exists("I", where = .)) I else NA,
-      `I-TR` = if(exists("I-TR", where = .)) `I-TR` else NA,
-      `D-TR` = if(exists("D-TR", where = .)) `D-TR` else NA
+      I = if(exists("I", where = .)) I else NA
     ) %>%
-    replace_na(list(I=0,D=0,`I-TR`=0,`D-TR`=0)) %>%
-    mutate(IMPEGNATO=I-D, IMPEGNATO_TR=`I-TR`-`D-TR`) %>%
+    replace_na(list(I = 0, D = 0)) %>%
+    mutate(IMPEGNATO_AMMESSO = I-D) %>%
     group_by(COD_LOCALE_PROGETTO) %>%
-    summarise(IMPEGNATO = sum(IMPEGNATO), IMPEGNATO_TR = sum(IMPEGNATO_TR)) %>%
-    mutate(IMPEGNATO = round2(IMPEGNATO, 2), IMPEGNATO_TR = round2(IMPEGNATO_TR, 2))
-#  }
-
+    summarise(IMPEGNATO_AMMESSO = sum(IMPEGNATO_AMMESSO)) %>%
+    mutate(IMPEGNATO_AMMESSO = round2(IMPEGNATO_AMMESSO, 2))
 
 # liquidato  ===================================================================================================
-# liquidato ##################################################################
-# FN07 pagamenti su progetti_attivi, P-R
-#  if (exists("IGRUE[[i]]$FN07")) {
-  IGRUE[[i]]$FN07$IMPORTO_PAG_AMM <- as.double(gsub(",","\\.",IGRUE[[i]]$FN07$IMPORTO_PAG_AMM))
-  dataframe$liquidato[[i]] <- IGRUE[[i]]$FN07 %>% 
-    filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-    spread(TIPOLOGIA_PAG_AMM, IMPORTO_PAG_AMM) %>%
+  # liquidato ##################################################################
+  # FN06 pagamenti su progetti_attivi, P-R
+  IGRUE[[i]]$FN06$IMPORTO_PAG <- as.double(gsub(",","\\.",IGRUE[[i]]$FN06$IMPORTO_PAG))
+  dataframe$liquidato[[i]] <- IGRUE[[i]]$FN06 %>% 
+    pivot_wider(id_cols = COD_LOCALE_PROGETTO, names_from = TIPOLOGIA_PAG, values_from = IMPORTO_PAG, values_fill = NA, values_fn = sum) %>%
+    #spread(TIPOLOGIA_PAG, IMPORTO_PAG) %>%
     mutate(
       P = if(exists("P", where = .)) P else NA,
-      R = if(exists("R", where = .)) R else NA,
-      `P-TR` = if(exists("P-TR", where = .)) `P-TR` else NA,
-      `R-TR` = if(exists("R-TR", where = .)) `R-TR` else NA
+      R = if(exists("R", where = .)) R else NA
     ) %>%
-    replace_na(list(`P`=0,`R`=0,`P-TR`=0,`R-TR`=0)) %>%
-    mutate(LIQUIDATO=`P`-`R`, LIQUIDATO_TR=`P-TR`-`R-TR`) %>%
+    replace_na(list(`P`=0,`R`=0)) %>%
+    mutate(LIQUIDATO=`P`-`R`) %>%
     group_by(COD_LOCALE_PROGETTO) %>%
-    summarise(LIQUIDATO = sum(LIQUIDATO), LIQUIDATO_TR = sum(LIQUIDATO_TR)) %>%
-    mutate(LIQUIDATO = round2(LIQUIDATO, 2), LIQUIDATO_TR = round2(LIQUIDATO_TR, 2))
-#  }
-# certificato  ================================================================================================
-# FN09 su progetti_attivi, per record non cancellati --> [certificato]
-  if (fondo %in% c("FESR", "INTERREG")) {
-  IGRUE[[i]]$FN09$IMPORTO_SPESA_PUB <- as.double(gsub(",","\\.",IGRUE[[i]]$FN09$IMPORTO_SPESA_PUB))
-  dataframe$certificato[[i]] <- IGRUE[[i]]$FN09 %>% 
-    filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-    spread(TIPOLOGIA_IMPORTO, IMPORTO_SPESA_PUB) %>%
-    mutate(
-      C = if(exists("C", where = .)) C else NA,
-      D = if(exists("D", where = .)) D else NA) %>%
-    replace_na(list(C = 0, D = 0)) %>%
-    mutate(CERTIFICATO=C-D) %>%
-    group_by(COD_LOCALE_PROGETTO) %>%
-    summarise(CERTIFICATO = sum(CERTIFICATO)) %>%
-    mutate(CERTIFICATO = round2(CERTIFICATO, 2))
-  }
+    summarise(LIQUIDATO = sum(LIQUIDATO)) %>%
+    mutate(LIQUIDATO = round2(LIQUIDATO, 2))
 
-# certificato  gennaio 2021 ================================================================================================
+# liquidato ##################################################################
+# FN07 pagamenti_ammessi su progetti_attivi, P-R
+  IGRUE[[i]]$FN07$IMPORTO_PAG_AMM <- as.double(gsub(",","\\.",IGRUE[[i]]$FN07$IMPORTO_PAG_AMM))
+  dataframe$liquidato_ammesso[[i]] <- IGRUE[[i]]$FN07 %>% 
+    filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
+    pivot_wider(id_cols = COD_LOCALE_PROGETTO, names_from = TIPOLOGIA_PAG_AMM, values_from = IMPORTO_PAG_AMM, values_fill = NA, values_fn = sum) %>%
+    mutate(
+      P = if(exists("P", where = .)) P else NA,
+      R = if(exists("R", where = .)) R else NA
+    ) %>%
+    replace_na(list(`P`=0,`R`=0)) %>%
+    mutate(LIQUIDATO_AMMESSO =`P`-`R`) %>%
+    group_by(COD_LOCALE_PROGETTO) %>%
+    summarise(LIQUIDATO_AMMESSO = sum(LIQUIDATO_AMMESSO)) %>%
+    mutate(LIQUIDATO_AMMESSO = round2(LIQUIDATO_AMMESSO, 2))
   
-#  dataframe$certificato[[i]] <- certificato_gennaio21 %>%
-#    filter(PRATICA %in% dataframe$mappa_pratica_asse[[i]]$COD_LOCALE_PROGETTO) %>%
-#    rename(COD_LOCALE_PROGETTO = PRATICA) %>%
-#    group_by(COD_LOCALE_PROGETTO) %>%
-#    summarise(CERTIFICATO = sum(CERTIFICATO)) %>%
-#    mutate(CERTIFICATO = round2(CERTIFICATO, 0))  
+# economie ========================================================================================================
+  # FN10 economie_fsc su progetti_attivi
+  IGRUE[[i]]$FN10$IMPORTO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN10$IMPORTO))
+  dataframe$economie_fsc[[i]] <- IGRUE[[i]]$FN10 %>% 
+    filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & COD_FONDO == "FSC") %>%
+    group_by(COD_LOCALE_PROGETTO) %>%
+    summarise(ECONOMIA_FSC = sum(IMPORTO)) %>%
+    mutate(ECONOMIA_FSC = round2(ECONOMIA_FSC, 2))
   
+  dataframe$economie_prov[[i]] <- IGRUE[[i]]$FN10 %>% 
+    filter(FLG_CANCELLAZIONE !="S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & COD_FONDO == "FPPROV") %>%
+    group_by(COD_LOCALE_PROGETTO) %>%
+    summarise(ECONOMIA_PROV = sum(IMPORTO)) %>%
+    mutate(ECONOMIA_PROV = round2(ECONOMIA_PROV, 2))  
+
 # report indicatori --------------------------------------------------------------------------------------------
-  if(fondo != "FSC"){
     dataframe$report_indicatori[[i]] <- IGRUE[[i]]$IN01 %>%
       #replace_na(FLG_CANCELLAZIONE = "") %>%
       mutate(VAL_PROGRAMMATO = as.double(str_replace(VAL_PROGRAMMATO, ",", ".")),
@@ -234,70 +246,36 @@ dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
              TIPO_INDICATORE, COD_INDICATORE, DESCRIZIONE_INDICATORE, 
              UNITA_MISURA, VALORE_PROGRAMMATO, VALORE_REALIZZATO) %>%
       arrange(ASSE, OT, PI, OS, COD_BANDO, ID_PRATICA, COD_INDICATORE)
-  } 
-  else {
-    dataframe$report_indicatori[[i]] <- IGRUE[[i]]$IN01 %>%
-      #replace_na(FLG_CANCELLAZIONE = "") %>%
-      mutate(VAL_PROGRAMMATO = as.double(str_replace(VAL_PROGRAMMATO, ",", ".")),
-             `VALORE_REALIZZATO` = as.double(str_replace({if("VALORE REALIZZATO" %in% names(.)) `VALORE REALIZZATO` else `VALORE_REALIZZATO`}, ",", "."))) %>%
-      filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-      left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$indicatori_descrizioni, by = "COD_INDICATORE") %>%
-      filter(!COD_LOCALE_PROGETTO %in% dataframe$mappa_scarti$COD_LOCALE_PROGETTO) %>%
-      rename(COD_BANDO = COD_PROC_ATT_LOCALE, 
-             BANDO = DESCR_PROCEDURA_ATT, 
-             ID_PRATICA = COD_LOCALE_PROGETTO, 
-             TIPO_INDICATORE = TIPO_INDICATORE_DI_OUTPUT, 
-             VALORE_PROGRAMMATO = VAL_PROGRAMMATO, 
-             VALORE_REALIZZATO = `VALORE_REALIZZATO`,
-             COD_INDICATORE_IGRUE = COD_INDICATORE,
-             COD_INDICATORE = COD_INDICATORE_OUT) %>%
-      select(ASSE,COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, 
-             TIPO_INDICATORE, COD_INDICATORE, DESCRIZIONE_INDICATORE, 
-             UNITA_MISURA, VALORE_PROGRAMMATO, VALORE_REALIZZATO) %>%
-      arrange(ASSE, COD_BANDO, ID_PRATICA, COD_INDICATORE)
-  }  
-
+  
 # report economics ------------------------------------------------------------
-  if(fondo != "FSC"){
   dataframe$report_pratica[[i]] <- dataframe$mappa_pratica_bando[[i]] %>%
     left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$cig[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$finanziamento[[i]], by = "COD_LOCALE_PROGETTO") %>%
     left_join(dataframe$concesso[[i]], by = "COD_LOCALE_PROGETTO") %>%
     left_join(dataframe$impegnato[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$impegnato_ammesso[[i]], by = "COD_LOCALE_PROGETTO") %>%
     left_join(dataframe$liquidato[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    left_join(dataframe$certificato[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$liquidato_ammesso[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$economie_fsc[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$economie_prov[[i]], by = "COD_LOCALE_PROGETTO") %>%
+    left_join(dataframe$costo_realizzato[[i]], by = "COD_LOCALE_PROGETTO") %>%
     filter(!COD_LOCALE_PROGETTO %in% dataframe$mappa_scarti$COD_LOCALE_PROGETTO) %>%
     mutate(
       IMPEGNATO = if(exists("IMPEGNATO", where = .)) IMPEGNATO else NA,
-      CERTIFICATO = if(exists("CERTIFICATO", where = .)) CERTIFICATO else NA,
-      LIQUIDATO = if(exists("LIQUIDATO", where = .)) LIQUIDATO else NA,
-      IMPEGNATO_TR = if(exists("IMPEGNATO_TR", where = .)) IMPEGNATO_TR else NA,
-      LIQUIDATO_TR = if(exists("LIQUIDATO_TR", where = .)) LIQUIDATO_TR else NA) %>%
+      IMPEGNATO_AMMESSO = if(exists("IMPEGNATO_AMMESSO", where = .)) IMPEGNATO_AMMESSO else NA,
+      LIQUIDATO = if(exists("IMPEGNATO_AMMESSO", where = .)) LIQUIDATO else NA,
+      LIQUIDATO_AMMESSO = if(exists("LIQUIDATO_AMMESSO", where = .)) LIQUIDATO_AMMESSO else NA,
+      COSTO_REALIZZATO = if(exists("COSTO_REALIZZATO", where = .)) COSTO_REALIZZATO else NA,
+      ECONOMIE_FSC = if(exists("ECONOMIA_FSC", where = .)) ECONOMIA_FSC else NA,
+      ECONOMIE_PROV = if(exists("ECONOMIA_PROV", where = .)) ECONOMIA_PROV else NA
+      ) %>%
     mutate_if(is.numeric, replace_na, 0) %>%
     #mutate_if(is.numeric, round2, 0) %>%
     rename(COD_BANDO = COD_PROC_ATT_LOCALE, BANDO = DESCR_PROCEDURA_ATT, ID_PRATICA = COD_LOCALE_PROGETTO) %>%
-    select(ASSE, OT, PI, OS, COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, CONCESSO, IMPEGNATO, CERTIFICATO, LIQUIDATO, IMPEGNATO_TR, LIQUIDATO_TR) %>%
-    arrange(ASSE, OT, PI, OS, COD_BANDO, ID_PRATICA)
-  }
-  else{
-    dataframe$report_pratica[[i]] <- dataframe$mappa_pratica_bando[[i]] %>%
-      left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$concesso[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$impegnato[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$liquidato[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      filter(!COD_LOCALE_PROGETTO %in% dataframe$mappa_scarti$COD_LOCALE_PROGETTO) %>%
-      mutate(
-        IMPEGNATO = if(exists("IMPEGNATO", where = .)) IMPEGNATO else NA,
-        CERTIFICATO = 0,
-        LIQUIDATO = if(exists("LIQUIDATO", where = .)) LIQUIDATO else NA,
-        IMPEGNATO_TR = if(exists("IMPEGNATO_TR", where = .)) IMPEGNATO_TR else NA,
-        LIQUIDATO_TR = if(exists("LIQUIDATO_TR", where = .)) LIQUIDATO_TR else NA) %>%
-      mutate_if(is.numeric, replace_na, 0) %>%
-      rename(COD_BANDO = COD_PROC_ATT_LOCALE, BANDO = DESCR_PROCEDURA_ATT, ID_PRATICA = COD_LOCALE_PROGETTO) %>%
-      select(ASSE, COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, CONCESSO, IMPEGNATO, CERTIFICATO, LIQUIDATO, IMPEGNATO_TR, LIQUIDATO_TR) %>%
-      arrange(ASSE, COD_BANDO, ID_PRATICA)
-  }
+    select(ASSE, COD_BANDO, BANDO, `DATA AVVIO PROCEDURA`,`DATA FINE PROCEDURA`, ID_PRATICA, TITOLO_PROGETTO, FINANZIAMENTO, CONCESSO, IMPEGNATO, IMPEGNATO_AMMESSO, DATA_IMPEGNO, LIQUIDATO, LIQUIDATO_AMMESSO, ECONOMIE_FSC, ECONOMIE_PROV, COSTO_REALIZZATO) %>%
+    arrange(ASSE, COD_BANDO, ID_PRATICA)
+  
   
   dataframe$report_bando[[i]] <- dataframe$report_pratica[[i]] %>%
     group_by(ASSE, COD_BANDO, BANDO) %>%
@@ -310,7 +288,6 @@ dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
 
 
 # report procedurale -----------------------------------------------------------
-  if(fondo != "FSC"){
     dataframe$report_procedurale[[i]] <- IGRUE[[i]]$PR00 %>%
     #replace_na(FLG_CANCELLAZIONE = "") %>%
     filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
@@ -327,28 +304,8 @@ dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
            DATA_INIZIO_PREVISTA, DATA_INIZIO_EFFETTIVA,
            DATA_FINE_PREVISTA, DATA_FINE_EFFETTIVA) %>%
     arrange(ASSE, OT, PI, OS, COD_BANDO, ID_PRATICA, COD_FASE)   
-  }
-  else{
-    dataframe$report_procedurale[[i]] <- IGRUE[[i]]$PR00 %>%
-      #replace_na(FLG_CANCELLAZIONE = "") %>%
-      filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-      left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
-      left_join(IGRUE$TC$TC46, by = "COD_FASE") %>%
-      filter(!COD_LOCALE_PROGETTO %in% dataframe$mappa_scarti$COD_LOCALE_PROGETTO) %>%
-      rename(COD_BANDO = COD_PROC_ATT_LOCALE, 
-             BANDO = DESCR_PROCEDURA_ATT, 
-             ID_PRATICA = COD_LOCALE_PROGETTO, 
-      ) %>%
-      select(ASSE, COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, 
-             COD_FASE, DESCRIZIONE_FASE, 
-             DATA_INIZIO_PREVISTA, DATA_INIZIO_EFFETTIVA,
-             DATA_FINE_PREVISTA, DATA_FINE_EFFETTIVA) %>%
-      arrange(ASSE, COD_BANDO, ID_PRATICA, COD_FASE)
-  }
 
 # report beneficiari -----------------------------------------------------------
-  if(fondo != "FSC"){
     dataframe$report_beneficiari[[i]] <- IGRUE[[i]]$SC00 %>%
     filter(COD_RUOLO_SOG=="2" & FLG_CANCELLAZIONE != "S") %>%
     left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
@@ -361,45 +318,5 @@ dataframe$concesso[[i]] <- IGRUE[[i]]$FN00 %>%
     select(ASSE, OT, PI, OS, COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, 
            CODICE_FISCALE, DENOMINAZIONE, FORMA_GIURIDICA) %>%
     arrange(ASSE, OT, PI, OS, COD_BANDO, ID_PRATICA)
-  }
-  else{
-  dataframe$report_beneficiari[[i]] <- IGRUE[[i]]$SC00 %>%
-    filter(COD_RUOLO_SOG=="2" & FLG_CANCELLAZIONE != "S") %>%
-    left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    filter(!COD_LOCALE_PROGETTO %in% dataframe$mappa_scarti$COD_LOCALE_PROGETTO) %>%
-    rename(COD_BANDO = COD_PROC_ATT_LOCALE, 
-           BANDO = DESCR_PROCEDURA_ATT, 
-           ID_PRATICA = COD_LOCALE_PROGETTO,
-           DENOMINAZIONE = DENOMINAZIONE_SOG) %>%
-    select(ASSE, COD_BANDO, BANDO, ID_PRATICA, TITOLO_PROGETTO, 
-           CODICE_FISCALE, DENOMINAZIONE, FORMA_GIURIDICA) %>%
-    arrange(ASSE, COD_BANDO, ID_PRATICA)
-  }
-
-# report percettori --------------------------------------------------------------------------------
-  pratiche_sf <- c("1140166",
-                   "343952",
-                   "343936",
-                   "347232",
-                   "387980",
-                   "1210635",
-                   "343940",
-                   "373162")
   
-  if(fondo == "FESR") {   
-  IGRUE[[i]]$FN08$IMPORTO <- as.double(gsub(",","\\.",IGRUE[[i]]$FN08$IMPORTO))
-  dataframe$report_percettori[[i]] <- IGRUE[[i]]$FN08 %>%
-    filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO) %>%
-    left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    separate(COD_PAGAMENTO, sep="_", into = c("ID_PRATICA", "TRANCHE"))
-  
-  dataframe$report_percettori_impegni[[i]] <- IGRUE[[i]]$FN04 %>%
-    filter(FLG_CANCELLAZIONE != "S" & COD_LOCALE_PROGETTO %in% dataframe$progetti_attivi[[i]]$COD_LOCALE_PROGETTO & COD_LOCALE_PROGETTO %in% pratiche_sf) %>%
-    left_join(dataframe$mappa_pratica_bando[[i]], by = "COD_LOCALE_PROGETTO") %>%
-    left_join(dataframe$mappa_pratica_asse[[i]], by = "COD_LOCALE_PROGETTO")
-  
-  }
-  
-}
+}   
